@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网页截屏 - New ToolsHub</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📸</text></svg>">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/fontawesome-all.min.css">
+    <link rel="stylesheet" href="../css/bootstrap.min.css">
+    <meta name="theme-color" content="#28a745">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* 截屏模式全屏覆盖 */
+        #captureMode {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #1a1a1a;
+            z-index: 9999;
+            display: none;
+            flex-direction: column;
+        }
+        #captureMode.active { display: flex; }
+        
+        /* 顶部工具栏 */
+        .capture-toolbar {
+            background: rgba(40, 40, 40, 0.95);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        .capture-toolbar .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 16px;
+        }
+        .capture-toolbar .brand i { color: #28a745; font-size: 20px; }
+        .capture-toolbar .info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .capture-toolbar .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+        .capture-toolbar .info-item i { color: #28a745; }
+        .capture-toolbar .info-item span {
+            background: rgba(40, 167, 69, 0.2);
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .capture-toolbar .actions {
+            display: flex;
+            gap: 10px;
+        }
+        .capture-toolbar .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .capture-toolbar .btn-confirm {
+            background: #28a745;
+            color: white;
+        }
+        .capture-toolbar .btn-confirm:hover { background: #218838; }
+        .capture-toolbar .btn-cancel {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        .capture-toolbar .btn-cancel:hover { background: rgba(255,255,255,0.2); }
+        
+        /* 共享窗口显示区域 */
+        .capture-viewport {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .capture-viewport video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            cursor: crosshair;
+        }
+        
+        /* 选择框 */
+        .selection-box {
+            position: absolute;
+            border: 3px solid #28a745;
+            background: rgba(40, 167, 69, 0.15);
+            pointer-events: none;
+            display: none;
+            z-index: 10;
+        }
+        .selection-box.show { display: block; }
+        .selection-box .corner {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            background: #28a745;
+            border-radius: 50%;
+        }
+        .selection-box .corner.tl { top: -7px; left: -7px; }
+        .selection-box .corner.tr { top: -7px; right: -7px; }
+        .selection-box .corner.bl { bottom: -7px; left: -7px; }
+        .selection-box .corner.br { bottom: -7px; right: -7px; }
+        
+        /* 操作提示 */
+        .operation-hint {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(40, 40, 40, 0.95);
+            color: white;
+            padding: 30px 40px;
+            border-radius: 16px;
+            text-align: center;
+            z-index: 20;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+        .operation-hint.hide { display: none; }
+        .operation-hint i {
+            font-size: 48px;
+            color: #28a745;
+            margin-bottom: 15px;
+        }
+        .operation-hint h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .operation-hint p {
+            font-size: 15px;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+        .operation-hint .shortcuts {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .operation-hint .shortcut {
+            background: rgba(255,255,255,0.1);
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .operation-hint .shortcut i { font-size: 14px; color: #28a745; margin: 0 5px 0 0; }
+        
+        /* 加载遮罩 */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.95);
+            z-index: 10001;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .loading-overlay.show { display: flex; }
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #28a745;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        .loading-text { margin-top: 20px; font-size: 18px; font-weight: 600; color: #333; }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            z-index: 10002;
+            animation: slideIn 0.3s ease;
+            max-width: 400px;
+        }
+        .toast.success { background: #28a745; }
+        .toast.error { background: #dc3545; }
+        .toast.warning { background: #ffc107; color: #333; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        
+        /* 原始页面样式 */
+        .capture-container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        .tool-header { text-align: center; margin-bottom: 30px; }
+        .tool-header h1 { color: #28a745; margin-bottom: 10px; }
+        
+        .shortcut-banner {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        .shortcut-banner h3 { margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 15px; }
+        .shortcut-key {
+            background: rgba(255,255,255,0.25);
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 2px;
+        }
+        
+        .capture-btn {
+            width: 100%;
+            padding: 25px;
+            font-size: 22px;
+            font-weight: 700;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);
+            color: white;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .capture-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(40, 167, 69, 0.4); }
+        
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .feature-item {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .feature-item i { font-size: 32px; color: #28a745; margin-bottom: 10px; }
+        .feature-item h4 { margin-bottom: 8px; color: #333; }
+        .feature-item p { font-size: 13px; color: #666; margin: 0; }
+        
+        .result-panel {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-top: 25px;
+            display: none;
+        }
+        .result-panel.show { display: block; }
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .result-title { font-size: 20px; font-weight: 700; color: #333; }
+        .action-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+        .action-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .action-btn.download { background: #28a745; color: white; }
+        .action-btn.copy { background: #17a2b8; color: white; }
+        .action-btn.new { background: #6c757d; color: white; }
+        
+        .preview-area {
+            text-align: center;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            overflow: auto;
+        }
+        .preview-area img { max-width: 100%; max-height: 500px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+        }
+        .info-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .info-card-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+        .info-card-value { font-size: 16px; font-weight: 700; color: #28a745; }
+        
+        .settings-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 25px;
+        }
+        .settings-panel select {
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        .settings-panel label { font-weight: 600; color: #333; margin-right: 15px; }
+    </style>
+</head>
+<body>
+    <!-- 截屏模式（全屏覆盖） -->
+    <div id="captureMode">
+        <div class="capture-toolbar">
+            <div class="brand">
+                <i class="fas fa-camera"></i>
+                <span>网页截屏工具</span>
+            </div>
+            <div class="info">
+                <div class="info-item">
+                    <i class="fas fa-vector-square"></i>
+                    <span id="selectionInfo">0 × 0</span>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn btn-confirm" onclick="confirmCapture()">
+                    <i class="fas fa-check"></i> 确认截屏
+                </button>
+                <button class="btn btn-cancel" onclick="cancelCapture()">
+                    <i class="fas fa-times"></i> 取消
+                </button>
+            </div>
+        </div>
+        <div class="capture-viewport" id="viewport">
+            <video id="captureVideo" playsinline></video>
+            <div class="selection-box" id="selectionBox">
+                <div class="corner tl"></div>
+                <div class="corner tr"></div>
+                <div class="corner bl"></div>
+                <div class="corner br"></div>
+            </div>
+            <div class="operation-hint" id="hintBox">
+                <i class="fas fa-mouse-pointer"></i>
+                <h2>选择截屏区域</h2>
+                <p>在被共享的窗口中拖动鼠标选择要截屏的区域</p>
+                <div class="shortcuts">
+                    <div class="shortcut"><i class="fas fa-check"></i> 拖动选择</div>
+                    <div class="shortcut"><i class="fas fa-check"></i> 确认截屏</div>
+                    <div class="shortcut"><i class="fas fa-times"></i> ESC 取消</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 原始首页 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/"><i class="fas fa-tools"></i> New ToolsHub</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ml-auto">
+                    <li class="nav-item"><a class="nav-link" href="/"><i class="fas fa-home"></i> 首页</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/tools/screenshot-tool"><i class="fas fa-camera"></i> 网页截屏</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="capture-container" id="mainPage">
+        <div class="tool-header">
+            <h1><i class="fas fa-camera"></i> 网页截屏工具</h1>
+            <p class="text-muted">选择窗口后，手动拖动截取任意区域</p>
+        </div>
+        
+        <div class="shortcut-banner">
+            <h3><i class="fas fa-keyboard"></i> 按快捷键触发截屏</h3>
+            <div class="shortcut-key">Ctrl + Alt + A</div>
+        </div>
+        
+        <div class="feature-list">
+            <div class="feature-item">
+                <i class="fas fa-window-restore"></i>
+                <h4>选择窗口</h4>
+                <p>从系统选择器中选择要截屏的窗口</p>
+            </div>
+            <div class="feature-item">
+                <i class="fas fa-vector-square"></i>
+                <h4>拖动选择</h4>
+                <p>手动拖动选择截屏区域</p>
+            </div>
+            <div class="feature-item">
+                <i class="fas fa-download"></i>
+                <h4>保存结果</h4>
+                <p>支持下载和复制到剪贴板</p>
+            </div>
+        </div>
+        
+        <div class="settings-panel">
+            <label>图片格式：</label>
+            <select id="imageFormat">
+                <option value="png">PNG (无损质量)</option>
+                <option value="jpeg">JPEG (压缩)</option>
+                <option value="webp">WebP (现代格式)</option>
+            </select>
+        </div>
+        
+        <button class="capture-btn" onclick="startCapture()">
+            <i class="fas fa-desktop"></i>
+            <span>开始截屏</span>
+        </button>
+        
+        <div class="result-panel" id="resultPanel">
+            <div class="result-header">
+                <h3 class="result-title"><i class="fas fa-check-circle text-success"></i> 截图成功</h3>
+                <div class="action-btns">
+                    <button class="action-btn download" onclick="downloadImage()"><i class="fas fa-download"></i> 下载</button>
+                    <button class="action-btn copy" onclick="copyImage()"><i class="fas fa-copy"></i> 复制</button>
+                    <button class="action-btn new" onclick="resetCapture()"><i class="fas fa-redo"></i> 重新截屏</button>
+                </div>
+            </div>
+            <div class="preview-area">
+                <img id="previewImg" src="" alt="截图预览">
+            </div>
+            <div class="info-grid">
+                <div class="info-card"><div class="info-card-label">宽度</div><div class="info-card-value" id="infoWidth">-</div></div>
+                <div class="info-card"><div class="info-card-label">高度</div><div class="info-card-value" id="infoHeight">-</div></div>
+                <div class="info-card"><div class="info-card-label">文件大小</div><div class="info-card-value" id="infoSize">-</div></div>
+                <div class="info-card"><div class="info-card-label">格式</div><div class="info-card-value" id="infoFormat">-</div></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 加载遮罩 -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">正在截取屏幕...</div>
+    </div>
+    
+    <script>
+        let videoStream = null;
+        let captureVideo = null;
+        let isSelecting = false;
+        let startX = 0, startY = 0;
+        let selectionRect = null;
+        let scaleFactor = 1;
+        let resultDataUrl = null;
+        
+        // 快捷键
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.altKey && e.key === 'a') {
+                e.preventDefault();
+                startCapture();
+            }
+            if (e.key === 'Escape') {
+                const captureMode = document.getElementById('captureMode');
+                if (captureMode.classList.contains('active')) {
+                    cancelCapture();
+                }
+            }
+        });
+        
+        async function startCapture() {
+            try {
+                showLoading('请在系统选择器中选择要截屏的窗口...');
+                
+                // 获取屏幕共享
+                videoStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        cursor: 'always',
+                        displaySurface: 'window'
+                    },
+                    audio: false
+                });
+                
+                hideLoading();
+                
+                // 隐藏首页，显示截屏模式
+                document.getElementById('mainPage').style.display = 'none';
+                document.querySelector('.navbar').style.display = 'none';
+                
+                const captureMode = document.getElementById('captureMode');
+                captureMode.classList.add('active');
+                
+                captureVideo = document.getElementById('captureVideo');
+                captureVideo.srcObject = videoStream;
+                await captureVideo.play();
+                
+                // 计算缩放比例
+                scaleFactor = captureVideo.videoWidth / captureVideo.clientWidth;
+                
+                // 重置选择状态
+                resetSelection();
+                document.getElementById('hintBox').classList.remove('hide');
+                
+            } catch (error) {
+                hideLoading();
+                if (error.name === 'AbortError') {
+                    showToast('已取消截屏', 'warning');
+                } else {
+                    showToast('截屏失败: ' + error.message, 'error');
+                }
+            }
+        }
+        
+        function resetSelection() {
+            const box = document.getElementById('selectionBox');
+            box.style.left = '0px';
+            box.style.top = '0px';
+            box.style.width = '0px';
+            box.style.height = '0px';
+            box.classList.remove('show');
+            selectionRect = null;
+            document.getElementById('selectionInfo').textContent = '0 × 0';
+        }
+        
+        const viewport = document.getElementById('viewport');
+        
+        viewport.addEventListener('mousedown', function(e) {
+            isSelecting = true;
+            document.getElementById('hintBox').classList.add('hide');
+            
+            const rect = captureVideo.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            
+            const box = document.getElementById('selectionBox');
+            box.style.left = startX + 'px';
+            box.style.top = startY + 'px';
+            box.style.width = '0px';
+            box.style.height = '0px';
+            box.classList.add('show');
+        });
+        
+        viewport.addEventListener('mousemove', function(e) {
+            if (!isSelecting) return;
+            
+            const rect = captureVideo.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            const left = Math.max(0, Math.min(startX, currentX));
+            const top = Math.max(0, Math.min(startY, currentY));
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+            
+            const box = document.getElementById('selectionBox');
+            box.style.left = left + 'px';
+            box.style.top = top + 'px';
+            box.style.width = width + 'px';
+            box.style.height = height + 'px';
+            
+            const actualWidth = Math.round(width * scaleFactor);
+            const actualHeight = Math.round(height * scaleFactor);
+            document.getElementById('selectionInfo').textContent = actualWidth + ' × ' + actualHeight;
+            
+            selectionRect = { left: left * scaleFactor, top: top * scaleFactor, width: actualWidth, height: actualHeight };
+        });
+        
+        viewport.addEventListener('mouseup', function() { isSelecting = false; });
+        viewport.addEventListener('mouseleave', function() { isSelecting = false; });
+        
+        function confirmCapture() {
+            if (!selectionRect || selectionRect.width < 10 || selectionRect.height < 10) {
+                showToast('请选择至少 10×10 像素的区域', 'warning');
+                return;
+            }
+            
+            // 关闭截屏模式
+            document.getElementById('captureMode').classList.remove('active');
+            
+            // 执行截屏
+            performCapture();
+        }
+        
+        function cancelCapture() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            document.getElementById('captureMode').classList.remove('active');
+            document.getElementById('mainPage').style.display = 'block';
+            document.querySelector('.navbar').style.display = '';
+            resetSelection();
+        }
+        
+        function performCapture() {
+            showLoading('正在截取屏幕...');
+            
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = selectionRect.width;
+                canvas.height = selectionRect.height;
+                const ctx = canvas.getContext('2d');
+                
+                ctx.drawImage(
+                    captureVideo,
+                    selectionRect.left, selectionRect.top, selectionRect.width, selectionRect.height,
+                    0, 0, selectionRect.width, selectionRect.height
+                );
+                
+                videoStream.getTracks().forEach(track => track.stop());
+                
+                const format = document.getElementById('imageFormat').value;
+                let mimeType = 'image/png', quality = 1.0;
+                if (format === 'jpeg') { mimeType = 'image/jpeg'; quality = 0.92; }
+                else if (format === 'webp') { mimeType = 'image/webp'; quality = 0.92; }
+                
+                resultDataUrl = canvas.toDataURL(mimeType, quality);
+                
+                // 显示结果
+                document.getElementById('previewImg').src = resultDataUrl;
+                document.getElementById('infoWidth').textContent = selectionRect.width + 'px';
+                document.getElementById('infoHeight').textContent = selectionRect.height + 'px';
+                document.getElementById('infoFormat').textContent = format.toUpperCase();
+                
+                const size = Math.round((resultDataUrl.split(',')[1].length) * 0.75);
+                document.getElementById('infoSize').textContent = formatFileSize(size);
+                
+                document.getElementById('resultPanel').classList.add('show');
+                hideLoading();
+                showToast('截屏成功!', 'success');
+                document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                hideLoading();
+                showToast('截屏失败: ' + error.message, 'error');
+            }
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+        
+        function downloadImage() {
+            if (!resultDataUrl) return;
+            const format = document.getElementById('imageFormat').value;
+            const a = document.createElement('a');
+            a.href = resultDataUrl;
+            a.download = 'screenshot-' + Date.now() + '.' + format;
+            a.click();
+            showToast('已开始下载', 'success');
+        }
+        
+        async function copyImage() {
+            if (!resultDataUrl) return;
+            try {
+                const blob = await fetch(resultDataUrl).then(r => r.blob());
+                await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+                showToast('已复制到剪贴板', 'success');
+            } catch (e) {
+                showToast('复制失败: ' + e.message, 'error');
+            }
+        }
+        
+        function resetCapture() {
+            document.getElementById('resultPanel').classList.remove('show');
+            resultDataUrl = null;
+            window.scrollTo(0, 0);
+        }
+        
+        function showLoading(text) {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loadingOverlay').classList.add('show');
+        }
+        
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('show');
+        }
+        
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            const icon = type === 'success' ? 'fa-check-circle' : 
+                         type === 'error' ? 'fa-times-circle' : 'fa-exclamation-triangle';
+            toast.innerHTML = '<i class="fas ' + icon + '"></i> ' + message;
+            document.body.appendChild(toast);
+            setTimeout(function() {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
